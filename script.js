@@ -29,7 +29,7 @@
  * Visitors do not need to enter or save a URL in their own browsers.
  * ═══════════════════════════════════════════════════════════════════════════
  */
-const DEFAULT_WORKER_URL = '';
+const DEFAULT_WORKER_URL = 'https://mba-placement-analyst.mishra-prasoon98.workers.dev';
 
 // ── PDF.js Worker Configuration ─────────────────────────────────────────────
 if (typeof pdfjsLib !== 'undefined') {
