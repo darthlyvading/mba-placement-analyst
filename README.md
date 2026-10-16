@@ -2,7 +2,7 @@
 
 A production-minded, zero-cost-deployable web application that helps MBA students evaluate campus placement job descriptions, detect IT services and bodyshop delivery traps disguised as consulting, calculate profile fit scores, and synthesize an evidence-grounded career strategy with a 24-week preparation roadmap.
 
-Includes a **Historical Placement JD Database** (269 archival records from previous Great Lakes Institute of Management placement cycles) for longitudinal benchmarking and employer recurrence analysis.
+Includes a **Historical Placement JD Database** (269 archival records from previous placement cycles) for longitudinal benchmarking and employer recurrence analysis.
 
 ---
 
