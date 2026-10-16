@@ -1,0 +1,25 @@
+name = "mba-placement-analyst"
+main = "index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Default Gemini Model (e.g. gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-pro)
+GEMINI_MODEL = "gemini-2.0-flash"
+
+# Allowed website origins for CORS. Use "*" for development, or your GitHub Pages URL for production:
+# e.g. "https://yourusername.github.io"
+ALLOWED_ORIGINS = "*"
+
+# Emergency Kill Switch: Set to "true" to disable all new AI analyses without taking site offline
+KILL_SWITCH = "false"
+
+[limits]
+cpu_ms = 30000
+
+# ── Cloudflare Secrets (DO NOT hardcode in this file!) ────────────────────────
+# Run the following commands in your terminal to set secrets securely:
+#
+#   wrangler secret put GEMINI_API_KEY
+#     -> Enter your Google Gemini API key (from https://aistudio.google.com/app/apikey)
+#
