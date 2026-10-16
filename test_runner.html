@@ -107,10 +107,25 @@
       const btnMD = doc.getElementById('btnDownloadMarkdown');
       logResult(Boolean(btnJSON && btnCSV && btnMD), "Export Suite: JSON, CSV, and Markdown export handlers present and wired");
 
+      // 11. Verify Model Selector Defaults to gemini-3.8-flash
+      const modelSelect = doc.getElementById('selectModelPreference');
+      logResult(modelSelect && modelSelect.value === 'gemini-3.8-flash', `Model Selector: Defaults to gemini-3.8-flash (actual: ${modelSelect ? modelSelect.value : 'missing'})`);
+
+      // 12. Verify Model Allowlist Options in UI
+      const modelOptions = Array.from(modelSelect ? modelSelect.options : []).map(o => o.value);
+      const hasSupportedModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'].every(m => modelOptions.includes(m));
+      logResult(hasSupportedModels, `Model Allowlist Options: gemini-3.8-flash, 2.5-flash, 1.5-flash, 1.5-pro present`);
+
+      // 13. Verify DEFAULT_WORKER_URL Unconfigured Invariant
+      const bannerMsg = doc.getElementById('backendStatusMessage');
+      const isBannerCorrect = bannerMsg && bannerMsg.textContent.includes('Backend AI service not configured');
+      const startBtn = doc.getElementById('btnStartAnalysis');
+      logResult(Boolean(isBannerCorrect && startBtn && startBtn.disabled), "Unconfigured Worker Invariant: Shows backend-not-configured banner and disables analysis button");
+
       const doneBanner = document.createElement('h2');
       doneBanner.id = 'suite-completed-banner';
       doneBanner.style.color = '#38bdf8';
-      doneBanner.textContent = '🎉 ALL 10 FRONTEND INTEGRATION TESTS COMPLETED SUCCESSFULLY!';
+      doneBanner.textContent = '🎉 ALL 13 FRONTEND INTEGRATION TESTS COMPLETED SUCCESSFULLY!';
       output.appendChild(doneBanner);
     };
   </script>
