@@ -2,7 +2,7 @@
 
 A production-minded, zero-cost-deployable web application that helps MBA students evaluate campus placement job descriptions, detect IT services and bodyshop delivery traps disguised as consulting, calculate profile fit scores, and synthesize an evidence-grounded career strategy with a 24-week preparation roadmap.
 
-Includes a **Historical Placement JD Database**  for longitudinal benchmarking and employer recurrence analysis.
+Includes a **Historical Placement JD Database** (269 archival records from previous Great Lakes Institute of Management placement cycles) for longitudinal benchmarking and employer recurrence analysis.
 
 ---
 
@@ -20,7 +20,7 @@ Includes a **Historical Placement JD Database**  for longitudinal benchmarking a
 │   - SheetJS (XLSX, CSV, TSV)    │                                       ▼
 │ • In-Memory Processing          │                     ┌───────────────────────────────────┐
 │ • Local Historical Precedent    │                     │      Google Gemini REST API       │
-│   Matcher (Client-side)         │                     │    (gemini-2.0-flash / default)   │
+│   Matcher (Client-side)         │                     │    (gemini-3.8-flash / default)   │
 │ • ZERO API Secrets in Browser   │                     └───────────────────────────────────┘
 │ • Safe Relative Source Ref      │
 └────────────────┬────────────────┘
@@ -34,8 +34,8 @@ Includes a **Historical Placement JD Database**  for longitudinal benchmarking a
 ```
 
 - **Frontend:** Pure HTML5, CSS, and Vanilla JavaScript hosted on **GitHub Pages**. Assets use relative paths (`./`) compatible with repository subpaths.
-- **Backend:** A single serverless **Cloudflare Worker** acting as a secure AI proxy, handling batching, schema validation, CORS, rate-limit shielding, and error sanitization.
-- **AI Engine:** Google Gemini REST API (`generateContent`) using server-side key authentication (`x-goog-api-key`).
+- **Backend:** A single serverless **Cloudflare Worker** acting as a secure AI proxy, handling batching, schema validation, CORS origin allowlisting, rate limiting, and error sanitization.
+- **AI Engine:** Google Gemini REST API (`generateContent`) using server-side key authentication (`x-goog-api-key`). Default model: `gemini-3.8-flash` (with `gemini-2.5-flash` and `gemini-1.5-flash` fallback support).
 - **Historical Evidence:** `data/previous_year_jds.json` loaded via relative path `./data/previous_year_jds.json`.
 - **Data Persistence:** None. Current cycle documents and extracted text are processed in-memory and are never stored in a third-party database.
 
@@ -49,16 +49,16 @@ Before deploying the application to public hosting (GitHub Pages and Cloudflare 
 - **Dataset File:** `data/previous_year_jds.json`
 - **Total Records:** Exactly 269 archival job description records across 135 unique employers.
 - **Duplicate Records:** 0 (100% unique `jd_id` values from 1 to 269).
-- **Source Preservation:** The original source JSON file was validated and preserved without destructive alteration.
+- **Source Preservation:** The original unedited source file is preserved intact and backed up outside the repository (`previous_year_jds.original_backup.json`).
 
 ### 2. Path Sanitization & Traceability
-- **Finding:** The source JSON contains `file_path` values with local machine absolute paths.
-- **Remediation:** The frontend implements `sanitizeSourceReference()`, which strips local drive letters, username directories, and absolute prefixes in runtime memory.
+- **Sanitized Dataset:** All 269 `file_path` values in the published `data/previous_year_jds.json` have been scrubbed to safe relative references (`Company/Filename.pdf`). Zero absolute Windows filesystem paths exist in the committed file.
+- **Runtime Mitigation:** The frontend also implements `sanitizeSourceReference()`, guaranteeing that any local drive letters or username paths are stripped in browser memory.
 - **Traceability:** Safe relative references (`Company/Filename`) and immutable IDs (`HIST-XX`) are used throughout the UI, modals, and export formats (JSON, CSV, Markdown). Absolute filesystem paths are never displayed to users or leaked in downloadable reports.
 
-### 3. Privacy & Sensitive Profile Information (Owner Review Required)
-- **Sensitive Metadata Detected:** `metadata.candidate_profile` in `data/previous_year_jds.json` contains candidate details (age, 4.5y experience at Accenture India, GLIM PGPM program, core constraint).
-- **Owner Review Flag:** Before pushing `data/previous_year_jds.json` to a public GitHub Pages repository, the project owner should review whether to retain, redact, or generalize `metadata.candidate_profile`.
+### 3. Privacy & Sensitive Profile Information (Redacted for Production)
+- **Redaction Applied:** The biographical `metadata.candidate_profile` object has been removed from `data/previous_year_jds.json` for public publication, leaving only macro dataset statistics (`total_jds_analyzed` and `classification_distribution`).
+- **External Backup:** The original historical dataset containing candidate metadata is preserved externally outside the repository (`previous_year_jds.original_backup.json`).
 - **Credential Check:** Audited all 269 records — zero emails, zero phone numbers, zero passwords, and zero API credentials exist in the dataset.
 - **Client Form Defaults:** Input fields in `index.html` and fallback values in `script.js` use generic placeholders (`MBA Candidate`, `4+ years in Technology & Solutions`, standard scores) to avoid leaking personal candidate attributes on public browsers.
 
@@ -88,9 +88,12 @@ Before deploying the application to public hosting (GitHub Pages and Cloudflare 
 - Historical records are loaded into a dedicated library (`AppState.historicalJds`) and are **never** added to current-cycle opportunity counts (`AppState.results.length`).
 - Category G roles (routine coding, maintenance, bodyshop culture, ERP delivery) are strictly isolated and barred by prompt instructions and code invariants from appearing in positive recommendations (Primary, Backup, or Insurance tracks).
 
-### 8. Backend Validation & Secret Protection
+### 8. Backend Validation, Abuse Protection & Secret Isolation
 - The Cloudflare Worker (`worker/index.js`) strictly validates all payloads (capped at 512 KB, max 10 JDs per batch).
-- The Gemini API key is read exclusively from the server-side environment secret (`env.GEMINI_API_KEY`) and is never returned in health checks or error payloads.
+- **Strict CORS Policy:** Configured for `https://darthlyvading.github.io`. Disallowed browser origins are rejected with HTTP 403 and receive no wildcard permission. Requests without an Origin header (curl, uptime monitors) proceed normally without CORS headers.
+- **Rate Limiting:** Isolate-local sliding window caps AI analysis to 20 requests per 5 minutes per client IP (`CF-Connecting-IP`).
+- **Gemini Model Support:** Defaults to `gemini-3.8-flash`. Allowlist supports `gemini-2.5-flash`, `gemini-1.5-flash`, and `gemini-1.5-pro`.
+- **Secret Isolation:** The Gemini API key is read exclusively from the server-side environment secret (`env.GEMINI_API_KEY`) and is never returned in health checks or error payloads.
 - Upstream error messages are sanitized using regex to strip API keys and tokens.
 
 ---
@@ -186,7 +189,7 @@ Open `http://localhost:8080` in your web browser. The historical database loads 
 
 | Component | Free Tier Quota | Notes |
 |---|---|---|
-| **Google Gemini 2.0 Flash** | 15 Requests per Minute (RPM)<br/>1,500 Requests per Day (RPD)<br/>1,000,000 Tokens per Minute | Free tier via Google AI Studio. Batching ensures minimal token consumption. |
-| **Cloudflare Workers** | 100,000 requests per day<br/>1,000 requests per minute | Free serverless tier. Zero ongoing hosting cost. |
+| **Google Gemini 3.8 Flash**<br/>*(Fallbacks: 2.5 Flash / 1.5 Flash)* | 15 Requests per Minute (RPM)<br/>1,500 Requests per Day (RPD)<br/>1,000,000 Tokens per Minute | Free tier via Google AI Studio. Proposed default is `gemini-3.8-flash`. If this model is not yet accessible in the owner's Google AI Studio project, change `GEMINI_MODEL` to `gemini-2.5-flash` or `gemini-1.5-flash` in `worker/wrangler.toml` and the frontend UI selector. |
+| **Cloudflare Workers** | 100,000 requests per day<br/>1,000 requests per minute | Free serverless tier. Zero ongoing hosting cost. Best-effort isolate-local rate limiter caps client bursts at 20 requests/5 min. |
 | **GitHub Pages** | 1 GB storage limit<br/>100 GB bandwidth / month | Free static hosting for personal and organizational repositories. |
 | **Client Ingestion** | Up to 100 JDs in memory | Document parsing occurs entirely in the user's browser. |

@@ -9,10 +9,9 @@ Before deploying this application to public repositories (GitHub) or public host
 - **Credential & Contact Verification:** 0 email addresses, 0 phone numbers, 0 passwords, and 0 API keys were found in the dataset.
 - **Source Data Policy:** The underlying dataset is preserved intact without destructive alteration.
 
-### 2. Candidate Profile Information (Owner Review Required)
-- **Flagged Attribute:** The top-level `metadata.candidate_profile` object in `data/previous_year_jds.json` contains biographical career details from a prior assessment session (candidate age, 4.5 years at Accenture India, GLIM PGPM program, and specific career constraint).
-- **Owner Review Required:** Before pushing `data/previous_year_jds.json` to a public repository, the project owner should review whether to retain this candidate profile, redact it, or replace it with a generic template.
-- **Frontend Isolation:** The frontend (`script.js`) strictly isolates `AppState.historicalMetadata` and never exposes `metadata.candidate_profile` in public tabs, rendered views, or downloadable reports unless the user explicitly enters their own profile.
+### 2. Candidate Profile Information (Redacted for Production)
+- **Redaction Applied:** The biographical `metadata.candidate_profile` object has been removed from `data/previous_year_jds.json` for public publication, leaving only macro statistics (`total_jds_analyzed` and `classification_distribution`). The original historical file containing the baseline profile is securely backed up outside the repository (`previous_year_jds.original_backup.json`).
+- **Frontend Isolation:** The frontend (`script.js`) strictly isolates `AppState.historicalMetadata` and never exposes biographical attributes in public tabs, rendered views, or downloadable reports unless the user explicitly enters their own profile.
 - **Generic Form Defaults:** All browser input forms default to generic candidate placeholders (`MBA Candidate`, `Great Lakes Institute of Management`, `4+ years in Technology & Solutions`, standard academic scores) to prevent inadvertent disclosure of personal data.
 
 ### 3. Absolute Filesystem Path Scrubbing
@@ -51,7 +50,10 @@ Before deploying this application to public repositories (GitHub) or public host
    - **Payload Limit:** Incoming JSON payloads are capped at 512 KB per request to prevent buffer abuse.
    - **Batch Limit:** The `/api/analyze-batch` endpoint strictly rejects batches exceeding 10 JDs per call to protect API quotas.
    - **Kill Switch:** An administrative kill switch (`KILL_SWITCH = "true"`) is built into the Worker to instantly disable AI analysis operations without interrupting static site hosting.
-   - **CORS Allowlist:** Origin checking restricts unauthorized domains from calling the backend Worker.
+   - **Strict CORS Origin Allowlist:** The backend is configured to accept requests exclusively from `https://darthlyvading.github.io`. Any other cross-origin browser request receives HTTP 403 Forbidden and zero wildcard access headers.
+   - **CORS Is Not Authentication:** CORS is enforced by browsers, not non-browser clients (curl/scripts). The Worker does not rely on CORS for API authorization; sensitive operations are protected by rate limits, secret isolation, and payload constraints.
+   - **Isolate-Local Rate Limiting:** A sliding window limiter caps AI analysis calls to a maximum of 20 requests per 5 minutes per client IP (`CF-Connecting-IP`). This provides best-effort burst abuse protection within free-tier Cloudflare Worker isolates without incurring external database latency. (Note: rate limits are isolate-local and not globally synchronized across all Cloudflare edge datacenters).
+   - **Supported Gemini Models:** Default model is `gemini-3.8-flash`. Fallbacks `gemini-2.5-flash`, `gemini-1.5-flash`, and `gemini-1.5-pro` are accepted by the server-side model allowlist.
 
 6. **Data Privacy and Retention:**
    - The application does not maintain a database or persistent server-side file storage.

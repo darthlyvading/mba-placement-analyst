@@ -4,12 +4,11 @@ compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-# Default Gemini Model (e.g. gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-pro)
-GEMINI_MODEL = "gemini-2.0-flash"
+# Default Gemini Model (e.g. gemini-3.8-flash, gemini-2.5-flash, gemini-1.5-flash, gemini-1.5-pro)
+GEMINI_MODEL = "gemini-3.8-flash"
 
-# Allowed website origins for CORS. Use "*" for development, or your GitHub Pages URL for production:
-# e.g. "https://yourusername.github.io"
-ALLOWED_ORIGINS = "*"
+# Allowed website origins for CORS. Configured for production GitHub Pages repository:
+ALLOWED_ORIGINS = "https://darthlyvading.github.io"
 
 # Emergency Kill Switch: Set to "true" to disable all new AI analyses without taking site offline
 KILL_SWITCH = "false"

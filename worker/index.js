@@ -9,38 +9,116 @@
  *
  * Server-Side Environment Variables / Secrets:
  *   GEMINI_API_KEY      — (Secret) Google Gemini API key. Set via `wrangler secret put GEMINI_API_KEY`
- *   GEMINI_MODEL        — (Var) Default model, e.g. "gemini-2.0-flash" or "gemini-1.5-flash"
- *   ALLOWED_ORIGINS     — (Var) Comma-separated allowed origins or "*"
+ *   GEMINI_MODEL        — (Var) Default model, e.g. "gemini-3.8-flash", "gemini-2.5-flash", or "gemini-1.5-flash"
+ *   ALLOWED_ORIGINS     — (Var) Comma-separated allowed origins (e.g. "https://darthlyvading.github.io") or "*"
  *   KILL_SWITCH         — (Var) Set to "true" to disable new analyses while keeping health check online
  */
 
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 const GEMINI_REST_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MAX_BODY_BYTES = 512 * 1024;    // 512 KB request limit
 const MAX_JDS_PER_BATCH = 10;         // Conservative batch size to prevent token exhaustion and timeouts
 
-// ── CORS Helper ─────────────────────────────────────────────────────────────
-function getCorsHeaders(request, env) {
-  const allowedConfig = (env.ALLOWED_ORIGINS || env.ALLOWED_ORIGIN || '*').trim();
-  const requestOrigin = request.headers.get('Origin') || '';
+// ── CORS Helper & Security Notice ───────────────────────────────────────────
+// NOTE: CORS (Cross-Origin Resource Sharing) is a browser-enforced security mechanism,
+// NOT caller authentication. It instructs compliant web browsers whether frontends
+// hosted on other domains may access responses from this Worker. Non-browser clients
+// (e.g. curl, custom scripts, postman) can specify or omit any Origin header at will.
+// Backend protection relies on server-side rate limits, payload validation, secret isolation,
+// and kill-switch controls, not on CORS headers alone.
 
-  let allowOrigin = '';
-  if (allowedConfig === '*') {
-    allowOrigin = '*';
-  } else {
-    const list = allowedConfig.split(',').map(s => s.trim().toLowerCase());
-    if (list.includes(requestOrigin.toLowerCase())) {
-      allowOrigin = requestOrigin;
-    }
+function evaluateOrigin(request, env) {
+  const allowedConfig = (env.ALLOWED_ORIGINS || env.ALLOWED_ORIGIN || '').trim();
+  const requestOrigin = request.headers.get('Origin');
+
+  // Requests without an Origin header (e.g. non-browser clients, direct curl, server-to-server)
+  if (!requestOrigin) {
+    return { isAllowed: true, originHeader: null, hasOrigin: false };
   }
 
+  // If explicitly configured for open wildcard access
+  if (allowedConfig === '*') {
+    return { isAllowed: true, originHeader: '*', hasOrigin: true };
+  }
+
+  // If no allowed origins are configured, disallow cross-origin browser requests
+  if (!allowedConfig) {
+    return { isAllowed: false, originHeader: null, hasOrigin: true };
+  }
+
+  const allowedList = allowedConfig
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  const normalizedOrigin = requestOrigin.trim().toLowerCase();
+  const isAllowed = allowedList.includes(normalizedOrigin);
+
   return {
-    'Access-Control-Allow-Origin': allowOrigin || '*',
+    isAllowed,
+    originHeader: isAllowed ? requestOrigin.trim() : null,
+    hasOrigin: true,
+  };
+}
+
+function getCorsHeaders(originEval) {
+  if (!originEval.originHeader) {
+    return {};
+  }
+  return {
+    'Access-Control-Allow-Origin': originEval.originHeader,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, x-client-version',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin',
   };
+}
+
+// ── In-Memory Rate Limiting (Isolate-Local) ───────────────────────────────────
+// Cloudflare Workers free-tier isolates maintain state in-memory during their lifetime.
+// This sliding window provides best-effort burst abuse protection per client IP
+// without incurring external KV/database latency or subscription costs.
+// IMPORTANT: Because Cloudflare provisions multiple worker isolates across global edge
+// datacenters, this rate limiter is isolate-local rather than globally synchronized.
+// It effectively throttles aggressive looping and client-side runaway calls on any active isolate.
+
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_REQUESTS_PER_WINDOW = 20;         // Max AI calls per IP per 5 minutes
+
+function checkRateLimit(request) {
+  const clientIp = request.headers.get('CF-Connecting-IP') ||
+                   request.headers.get('X-Forwarded-For') ||
+                   'unknown-client';
+
+  const now = Date.now();
+  let record = rateLimitMap.get(clientIp);
+
+  if (!record || (now - record.windowStart) > RATE_LIMIT_WINDOW_MS) {
+    record = { windowStart: now, count: 1 };
+    rateLimitMap.set(clientIp, record);
+
+    // Housekeeping to prevent memory leak
+    if (rateLimitMap.size > 1000) {
+      for (const [ip, entry] of rateLimitMap.entries()) {
+        if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+          rateLimitMap.delete(ip);
+        }
+      }
+    }
+    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1 };
+  }
+
+  record.count += 1;
+  if (record.count > MAX_REQUESTS_PER_WINDOW) {
+    return {
+      allowed: false,
+      remaining: 0,
+      resetMs: (record.windowStart + RATE_LIMIT_WINDOW_MS) - now,
+    };
+  }
+
+  return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - record.count };
 }
 
 function jsonResponse(data, status = 200, cors = {}) {
@@ -61,9 +139,21 @@ function errorResponse(message, code = 'INVALID_REQUEST', status = 400, cors = {
 // ── Main Fetch Router ───────────────────────────────────────────────────────
 export default {
   async fetch(request, env) {
-    const cors = getCorsHeaders(request, env);
+    const originEval = evaluateOrigin(request, env);
 
-    // Handle OPTIONS Preflight
+    // If request has an Origin header and it is NOT in the allowlist:
+    if (originEval.hasOrigin && !originEval.isAllowed) {
+      if (request.method === 'OPTIONS') {
+        // Disallowed cross-origin preflight: reject with 403 and NO Access-Control-Allow-Origin header
+        return new Response('CORS Origin Forbidden', { status: 403 });
+      }
+      // Disallowed cross-origin actual request: reject with 403 and NO Access-Control-Allow-Origin header
+      return errorResponse('Cross-Origin Request Blocked: Origin not authorized.', 'CORS_FORBIDDEN', 403, {});
+    }
+
+    const cors = getCorsHeaders(originEval);
+
+    // Handle OPTIONS Preflight for allowed requests
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
     }
@@ -136,6 +226,12 @@ async function handleAnalyzeBatch(request, env, cors) {
   }
   if (!env.GEMINI_API_KEY) {
     return errorResponse('AI provider not configured. Please set GEMINI_API_KEY secret.', 'NOT_CONFIGURED', 503, cors);
+  }
+
+  // Rate limit check (best-effort isolate-local)
+  const rateLimit = checkRateLimit(request);
+  if (!rateLimit.allowed) {
+    return errorResponse(`Rate limit exceeded. Maximum ${MAX_REQUESTS_PER_WINDOW} AI analysis requests per 5 minutes. Please wait before retrying.`, 'RATE_LIMIT_EXCEEDED', 429, cors);
   }
 
   // Content length check
@@ -304,6 +400,12 @@ async function handleSynthesize(request, env, cors) {
   }
   if (!env.GEMINI_API_KEY) {
     return errorResponse('AI provider not configured. Please set GEMINI_API_KEY secret.', 'NOT_CONFIGURED', 503, cors);
+  }
+
+  // Rate limit check (best-effort isolate-local)
+  const rateLimit = checkRateLimit(request);
+  if (!rateLimit.allowed) {
+    return errorResponse(`Rate limit exceeded. Maximum ${MAX_REQUESTS_PER_WINDOW} AI analysis requests per 5 minutes. Please wait before retrying.`, 'RATE_LIMIT_EXCEEDED', 429, cors);
   }
 
   let body;
@@ -537,9 +639,11 @@ function isKillSwitchActive(env) {
 
 function sanitizeModelName(model) {
   const allowed = [
-    'gemini-2.0-flash',
+    'gemini-3.8-flash',
+    'gemini-2.5-flash',
     'gemini-1.5-flash',
     'gemini-1.5-pro',
+    'gemini-2.0-flash',
     'gemini-2.0-flash-lite',
   ];
   return allowed.includes(model) ? model : DEFAULT_MODEL;
