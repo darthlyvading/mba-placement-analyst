@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MBA Placement Strategy Analyst — Campus Placement AI</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  
+  <!-- Application Stylesheet -->
+  <link rel="stylesheet" href="./style.css"/>
+
+  <!-- External Parsers (Pinned CDN Versions for Browser-Side Processing) -->
+  <!-- 1. PDF.js for PDF text extraction -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <!-- 2. Mammoth for DOCX extraction -->
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <!-- 3. SheetJS for XLSX, CSV, and TSV spreadsheets -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- ═════════════════════════════════════════════════════════════
+     HEADER
+══════════════════════════════════════════════════════════════════ -->
+<header>
+  <div class="container header-inner">
+    <div class="header-brand">
+      <img src="./assets/logo.svg" alt="MBA Placement Strategy Analyst Logo"/>
+      <div class="header-title">
+        <h1>MBA Placement Strategy Analyst</h1>
+        <p>Campus Placement Intelligence · IT-Trap Detection · Historical Database Benchmarking</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary btn-sm" id="btnTestFixtureTop">🧪 Load Test JDs</button>
+      <button class="btn btn-secondary btn-sm" id="btnPrintTop">🖨 Print / PDF</button>
+      <button class="btn btn-danger btn-sm" id="btnClearAllTop">🗑 Clear All</button>
+    </div>
+  </div>
+</header>
+
+<!-- ═════════════════════════════════════════════════════════════
+     PRIVACY & CONSENT NOTICE
+══════════════════════════════════════════════════════════════════ -->
+<div class="notice-banner">
+  <div class="container notice-inner">
+    <span class="notice-icon">🔒</span>
+    <div>
+      <strong>Privacy & Data Consent:</strong> Extracted JD text and candidate profile data are processed in-memory and transmitted via HTTPS to the configured Cloudflare Worker and Google Gemini API exclusively when you click <em>Run Placement Analysis</em>. No files or analysis results are persistently stored on our servers. Google Gemini API terms apply. Historical records in <code>data/previous_year_jds.json</code> are public campus recruitment archives.
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════
+     BACKEND WORKER STATUS BANNER
+══════════════════════════════════════════════════════════════════ -->
+<div class="container">
+  <div class="backend-banner" id="backendBanner">
+    <div style="display:flex; align-items:center; gap:0.6rem; flex:1;">
+      <span style="font-size:1.1rem;">⚡</span>
+      <div id="backendStatusMessage" style="font-weight: 500; font-size: 0.85rem; line-height: 1.45;">Checking backend…</div>
+    </div>
+    <button class="btn btn-secondary btn-sm" id="btnTestBackend" style="display:none;">Retry Connection</button>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════
+     PRIMARY NAVIGATION TABS
+══════════════════════════════════════════════════════════════════ -->
+<div class="container tab-nav-wrapper">
+  <nav class="tab-bar" role="tablist" aria-label="Placement App Sections">
+    <button class="tab-btn active" data-tab="tab-ingest" role="tab" aria-selected="true">
+      📂 1. Ingestion & Setup <span class="badge-pill" id="badgeJdCount">0</span>
+    </button>
+    <button class="tab-btn" data-tab="tab-profile" role="tab" aria-selected="false">
+      👤 2. Candidate Profile & Weights
+    </button>
+    <button class="tab-btn" data-tab="tab-historical" role="tab" aria-selected="false">
+      📚 3. Historical JD Library <span class="badge-pill" id="badgeHistCount">269</span>
+    </button>
+    <button class="tab-btn" data-tab="tab-dashboard" role="tab" aria-selected="false">
+      📊 4. Executive Dashboard
+    </button>
+    <button class="tab-btn" data-tab="tab-jds" role="tab" aria-selected="false">
+      📋 5. Verified JD Analysis
+    </button>
+    <button class="tab-btn" data-tab="tab-strategy" role="tab" aria-selected="false">
+      🧭 6. Cross-Category Strategy
+    </button>
+    <button class="tab-btn" data-tab="tab-roadmap" role="tab" aria-selected="false">
+      🗓️ 7. 6-Month Roadmap
+    </button>
+    <button class="tab-btn" data-tab="tab-export" role="tab" aria-selected="false">
+      📥 8. Downloads & Audit
+    </button>
+  </nav>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════
+     TAB 1: INGESTION & SETUP
+══════════════════════════════════════════════════════════════════ -->
+<main class="container section-gap">
+
+  <section class="tab-content" id="tab-ingest">
+    <!-- Drop Zone & Actions -->
+    <div class="card">
+      <div class="card-header-flex">
+        <div>
+          <h2>📂 Ingest Job Descriptions (Current Cycle)</h2>
+          <p style="color:var(--text-muted); font-size:0.86rem; margin:0;">
+            Upload PDF, DOCX, TXT, Markdown, CSV, TSV, JSON, or Excel (XLSX). Client-side extraction only.
+          </p>
+        </div>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <button class="btn btn-secondary btn-sm" id="btnLoadTestFixtures">
+            🧪 Load Synthetic Test JDs (4 Demo Roles)
+          </button>
+        </div>
+      </div>
+
+      <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Drag and drop JD files here or click to upload">
+        <div class="drop-zone-icon">📄</div>
+        <p><strong>Click to choose files</strong> or drag and drop files here</p>
+        <small>Supported: PDF · DOCX · TXT · Markdown · CSV · TSV · JSON · XLSX (Up to 100 JDs)</small>
+        <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.txt,.md,.markdown,.csv,.tsv,.json,.xlsx" style="display:none;"/>
+      </div>
+
+      <!-- Quick Paste Area -->
+      <div style="margin-top:1.25rem;">
+        <label for="pasteJdInput">Or paste JD text directly (separate multiple JDs with '---' or 'JD:' lines):</label>
+        <textarea id="pasteJdInput" rows="4" placeholder="Paste job description text here..."></textarea>
+        <button class="btn btn-secondary btn-sm" id="btnAddPastedJd" style="margin-top:0.4rem;">
+          ➕ Add Pasted Text as JD
+        </button>
+      </div>
+    </div>
+
+    <!-- Loaded Items Review & Status -->
+    <div class="card section-gap" id="loadedJdCard" style="display:none;">
+      <div class="card-header-flex">
+        <h3>Loaded Job Descriptions (<span id="loadedCountText">0</span>)</h3>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-secondary btn-sm" id="btnClearLoadedJds">Remove All Loaded</button>
+        </div>
+      </div>
+      
+      <div id="duplicateAlertBox" class="alert alert-warn" style="display:none;">
+        <span>⚠ <strong id="duplicateCountText">0</strong> potential duplicate JD(s) detected based on text hash.</span>
+      </div>
+
+      <div id="historicalRecurrenceAlertBox" class="alert alert-info" style="display:none;">
+        <span>ℹ <strong id="historicalRecurrenceCountText">0</strong> loaded role(s) match recurring employers from previous placement cycles.</span>
+      </div>
+
+      <ul class="jd-item-list" id="jdItemList"></ul>
+    </div>
+
+    <!-- Execution Controls & Progress -->
+    <div class="card section-gap">
+      <h2>🚀 Analysis Orchestration</h2>
+      <div class="panel-grid-3">
+        <div>
+          <label for="selectBatchSize">Batch Size per AI Call</label>
+          <select id="selectBatchSize">
+            <option value="3" selected>3 JDs (Conservative & Safe)</option>
+            <option value="5">5 JDs (Moderate)</option>
+            <option value="8">8 JDs (High Token Capacity)</option>
+          </select>
+          <small>Small batches avoid token truncation and rate-limit drops.</small>
+        </div>
+        <div>
+          <label for="selectModelPreference">Model Identifier</label>
+          <select id="selectModelPreference">
+            <option value="gemini-2.0-flash" selected>gemini-2.0-flash (Recommended)</option>
+            <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+            <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+          </select>
+          <small>Backend must support the selected Gemini model.</small>
+        </div>
+        <div>
+          <label>Historical Evidence Integration</label>
+          <div style="font-size:0.86rem; padding-top:0.35rem; color:var(--slate-dark);">
+            📚 <strong>Automated Local Matcher</strong><br/>
+            <small>Finds top 1-3 historical precedents per JD for comparative context.</small>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:1.25rem; display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+        <button class="btn btn-primary btn-lg" id="btnStartAnalysis">
+          🚀 Run Placement Analysis
+        </button>
+        <button class="btn btn-secondary btn-lg" id="btnCancelAnalysis" disabled>
+          ⏹ Abort Run
+        </button>
+        <button class="btn btn-warn btn-sm" id="btnRetryFailed" style="display:none;">
+          🔄 Retry Failed Batches
+        </button>
+        <span id="analysisStatusLabel" style="font-size:0.88rem; font-weight:500;">Ready.</span>
+      </div>
+
+      <!-- Live Pipeline Tracker -->
+      <div class="progress-card" id="pipelineProgressCard" style="display:none;">
+        <div class="stages-wrapper" id="pipelineStagesWrapper">
+          <span class="stage-item" id="stage1">1. Ingest & Normalize</span>
+          <span class="stage-item" id="stage2">2. Batch Classification & Historical Precedent Search</span>
+          <span class="stage-item" id="stage3">3. Validation & Isolation</span>
+          <span class="stage-item" id="stage4">4. Synthesis & Strategy</span>
+          <span class="stage-item" id="stage5">5. Final Report & Exports</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="pipelineProgressFill"></div>
+        </div>
+        <div class="progress-status-row">
+          <span id="pipelineProgressLabel">Processing…</span>
+          <span id="pipelineProgressPct">0%</span>
+        </div>
+        <div class="live-console-log" id="liveConsoleLog"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       TAB 2: CANDIDATE PROFILE & SCORING WEIGHTS
+  ══════════════════════════════════════════════════════════════════ -->
+  <section class="tab-content" id="tab-profile" style="display:none;">
+    <div class="card">
+      <h2>👤 Candidate Profile (Placement Reference)</h2>
+      <p style="color:var(--text-muted); font-size:0.86rem;">
+        This profile defines your core strengths, experience, and non-negotiable career constraints.
+      </p>
+
+      <div class="panel-grid-2">
+        <div>
+          <label for="profName">Candidate Name</label>
+          <input type="text" id="profName" placeholder="e.g. MBA Candidate" value="MBA Candidate"/>
+        </div>
+        <div>
+          <label for="profMba">MBA Institution</label>
+          <input type="text" id="profMba" value="Great Lakes Institute of Management, Chennai"/>
+        </div>
+        <div>
+          <label for="profPrevExp">Prior Work Experience</label>
+          <input type="text" id="profPrevExp" placeholder="e.g. 4+ years in Technology & Solutions" value="4+ years in Technology & Solutions"/>
+        </div>
+        <div>
+          <label for="profExpAreas">Primary Experience Areas</label>
+          <input type="text" id="profExpAreas" value="Solution architecture, client stakeholder management, project scoping, delivery execution, coding"/>
+        </div>
+      </div>
+
+      <div class="panel-grid-3 section-gap">
+        <div>
+          <label for="profC10">Class 10 Score (%)</label>
+          <input type="number" id="profC10" value="90" min="0" max="100" step="0.1"/>
+        </div>
+        <div>
+          <label for="profC12">Class 12 Score (%)</label>
+          <input type="number" id="profC12" value="90" min="0" max="100" step="0.1"/>
+        </div>
+        <div>
+          <label for="profBtech">Graduation / BTech (%)</label>
+          <input type="number" id="profBtech" value="75" min="0" max="100" step="0.1"/>
+        </div>
+      </div>
+
+      <div class="section-gap">
+        <label for="profStrengths">Core Differentiating Strengths</label>
+        <input type="text" id="profStrengths" value="Translating technology to business, solutioning, delivery execution, client communication"/>
+      </div>
+
+      <div class="section-gap">
+        <label for="profInclination">Primary Career Track Inclination</label>
+        <input type="text" id="profInclination" value="Technology strategy and digital transformation consulting"/>
+      </div>
+
+      <div class="section-gap">
+        <label for="profConstraint" style="color:var(--danger);">
+          ⛔ Hard Career Constraint (Non-Negotiable)
+        </label>
+        <input type="text" id="profConstraint" value="Wants to permanently leave IT services, staff augmentation, and bodyshop culture"/>
+      </div>
+
+      <div class="section-gap">
+        <label for="profUnacceptable">Unacceptable Role Archetypes</label>
+        <textarea id="profUnacceptable" rows="3">Staff augmentation, implementation-heavy ERP delivery, routine coding and maintenance, outsourcing delivery disguised as consulting</textarea>
+      </div>
+    </div>
+
+    <!-- Optimization Weights -->
+    <div class="card section-gap">
+      <h2>⚖️ Career Scoring Weights (Must Total 100%)</h2>
+      <p style="color:var(--text-muted); font-size:0.86rem;">
+        These weights determine the weighted fit score for each eligible role and career track.
+      </p>
+
+      <div class="panel-grid-4">
+        <div>
+          <label for="weightEarnings">5-Yr Earnings Potential: <span id="valWeightEarnings">30</span>%</label>
+          <input type="range" id="weightEarnings" min="0" max="100" step="5" value="30"/>
+        </div>
+        <div>
+          <label for="weightPrestige">Employer Prestige: <span id="valWeightPrestige">25</span>%</label>
+          <input type="range" id="weightPrestige" min="0" max="100" step="5" value="25"/>
+        </div>
+        <div>
+          <label for="weightFit">Profile Fit: <span id="valWeightFit">25</span>%</label>
+          <input type="range" id="weightFit" min="0" max="100" step="5" value="25"/>
+        </div>
+        <div>
+          <label for="weightEscape">IT-Escape Velocity: <span id="valWeightEscape">20</span>%</label>
+          <input type="range" id="weightEscape" min="0" max="100" step="5" value="20"/>
+        </div>
+      </div>
+
+      <div id="weightValidationNotice" class="alert alert-success" style="margin-top:1rem;">
+        ✓ Total Weight: <strong>100%</strong> (Valid configuration)
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       TAB 3: HISTORICAL JD LIBRARY & TRENDS (269 RECORDS)
+══════════════════════════════════════════════════════════════════ -->
+  <section class="tab-content" id="tab-historical" style="display:none;">
+    <!-- Loading & Schema Audit Banner -->
+    <div id="histStatusAlert" class="alert alert-info">
+      <span>📚 <strong>Historical Placement Database:</strong> Loaded <strong>269</strong> archival records from Great Lakes previous placement cycles. <span style="font-size:0.8rem; display:block; margin-top:0.25rem; color:var(--text-muted);">Notice: Fit scores and compensation ranges are pre-computed model heuristics; placement years are inferred or unspecified.</span></span>
+    </div>
+
+    <!-- Schema Inspection Card -->
+    <div class="card">
+      <div class="card-header-flex">
+        <div>
+          <h2>📚 Historical Database Schema & Quality Profile</h2>
+          <p style="color:var(--text-muted); font-size:0.86rem; margin:0;">
+            Source: <code>data/previous_year_jds.json</code>. Normalization layer maps raw attributes to the application's internal structure with safe relative path referencing.
+          </p>
+        </div>
+      </div>
+
+      <div class="panel-grid-3 section-gap">
+        <div style="background:var(--bg-panel); padding:0.85rem; border-radius:var(--radius-sm); font-size:0.84rem;">
+          <strong>Total Archival Records:</strong> 269<br/>
+          <strong>Unique Employers:</strong> 135<br/>
+          <strong>Pre-classified Categories:</strong> 7 (A through G)<br/>
+          <strong>Duplicate Records:</strong> 0 (100% unique IDs)
+        </div>
+        <div style="background:var(--bg-panel); padding:0.85rem; border-radius:var(--radius-sm); font-size:0.84rem;">
+          <strong>Available Attributes (Heuristic):</strong><br/>
+          ✓ Company & Role Title<br/>
+          ✓ Model Fit Scores (Profile, Moat, Escape)<br/>
+          ✓ Model Strategic Rationale & Client Index<br/>
+          ✓ Model CTC Estimate Ranges
+        </div>
+        <div style="background:var(--bg-panel); padding:0.85rem; border-radius:var(--radius-sm); font-size:0.84rem;">
+          <strong>Data Scope & Provenance Disclosures:</strong><br/>
+          • <strong>Placement Years:</strong> 0 explicit fields; 38 inferred from filenames (2026: 27, 2025: 8, 2025-26: 2, 2024: 1), 231 Unspecified.<br/>
+          • <strong>Scores & CTCs:</strong> Model heuristic baselines; not official college placement statistics.<br/>
+          • <strong>Hiring Outcomes:</strong> Selection rates and conversion stats are not recorded.
+        </div>
+      </div>
+    </div>
+
+    <!-- Historical Trends Section -->
+    <div class="card section-gap">
+      <h2>📈 Historical Placement Trends & Analytics</h2>
+      
+      <!-- Stats Summary -->
+      <div class="panel-grid-5" id="histStatsCards">
+        <div class="card" style="border-top:3px solid var(--accent); padding:0.85rem;">
+          <small>Total Historical JDs</small>
+          <div style="font-size:1.6rem; font-weight:700;">269</div>
+        </div>
+        <div class="card" style="border-top:3px solid var(--cat-a); padding:0.85rem;">
+          <small>True Consulting (Cat A)</small>
+          <div style="font-size:1.6rem; font-weight:700; color:var(--cat-a);">96 (35.7%)</div>
+        </div>
+        <div class="card" style="border-top:3px solid var(--cat-g); padding:0.85rem;">
+          <small>IT Traps (Cat G)</small>
+          <div style="font-size:1.6rem; font-weight:700; color:var(--cat-g);">58 (21.6%)</div>
+        </div>
+        <div class="card" style="border-top:3px solid var(--cat-b); padding:0.85rem;">
+          <small>Product Mgmt (Cat B)</small>
+          <div style="font-size:1.6rem; font-weight:700; color:var(--cat-b);">33 (12.3%)</div>
+        </div>
+        <div class="card" style="border-top:3px solid var(--cat-c); padding:0.85rem;">
+          <small>Analytics (Cat C)</small>
+          <div style="font-size:1.6rem; font-weight:700; color:var(--cat-c);">27 (10.0%)</div>
+        </div>
+      </div>
+
+      <div class="panel-grid-2 section-gap">
+        <!-- Top Recurring Employers -->
+        <div>
+          <h4>Employer Record Frequency in Available Dataset</h4>
+          <p style="font-size:0.8rem; color:var(--text-muted);">
+            Employers with the highest count of JD records stored in this 269-record dataset. 
+            <em>Notice: Counts reflect available archival documents, not total placement offers or verified recruitment in multiple years.</em>
+          </p>
+          <div id="histEmployerRecurrenceList" style="margin-top:0.5rem;"></div>
+        </div>
+
+        <!-- Category Distribution Bars -->
+        <div>
+          <h4>Observed Category Distribution (269 JDs)</h4>
+          <p style="font-size:0.8rem; color:var(--text-muted);">Classified across the 7 primary evaluation archetypes (denominator: 269 records):</p>
+          <div id="histCategoryDistributionBars" style="margin-top:0.5rem;"></div>
+        </div>
+      </div>
+
+      <!-- Compensation Benchmark Estimates -->
+      <div class="section-gap">
+        <h4>Model-Estimated Compensation Benchmarks by Category</h4>
+        <p style="font-size:0.8rem; color:var(--text-muted);">
+          Compiled from pre-computed model CTC estimates in the historical dataset. These are heuristic market benchmarks and do not represent verified college placement cell records or guaranteed corporate offer letters.
+        </p>
+        <div class="data-table-wrapper" style="margin-top:0.5rem;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Role Archetype</th>
+                <th>Typical Year 1 Range</th>
+                <th>Year 5 Expected Range</th>
+                <th>Year 10 Ceiling Range</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="pill cat-pill-A">Cat A: Consulting</span></td>
+                <td>Strategy, Management & Digital Advisory</td>
+                <td><strong>16.0 - 24.0 LPA</strong></td>
+                <td>35.0 - 55.0 LPA (Manager/Lead)</td>
+                <td>1.0 Cr - 2.5 Cr+ (Partner/MD)</td>
+              </tr>
+              <tr>
+                <td><span class="pill cat-pill-B">Cat B: Product</span></td>
+                <td>B2B SaaS & Tech Product Manager</td>
+                <td><strong>18.0 - 28.0 LPA</strong></td>
+                <td>32.0 - 48.0 LPA (Senior PM/Director)</td>
+                <td>80.0 L - 1.8 Cr (VP Product)</td>
+              </tr>
+              <tr>
+                <td><span class="pill cat-pill-C">Cat C: Analytics</span></td>
+                <td>Commercial Analytics & AI Consulting</td>
+                <td><strong>15.0 - 22.0 LPA</strong></td>
+                <td>28.0 - 42.0 LPA (Analytics Manager)</td>
+                <td>70.0 L - 1.5 Cr (Head of Data)</td>
+              </tr>
+              <tr style="background:#fff5f5;">
+                <td><span class="pill cat-pill-G">Cat G: IT Trap</span></td>
+                <td>Maintenance, Staff Aug & ERP Delivery</td>
+                <td><strong>8.0 - 14.0 LPA</strong></td>
+                <td>16.0 - 24.0 LPA (Delivery Lead)</td>
+                <td>35.0 L - 60.0 L (Delivery Director)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Historical JD Directory -->
+    <div class="card section-gap">
+      <div class="card-header-flex">
+        <div>
+          <h2>Historical Job Description Directory (<span id="histFilterCountText">269</span> records shown)</h2>
+          <p style="color:var(--text-muted); font-size:0.86rem; margin:0;">
+            Search and audit all 269 historical placement roles. Click "Inspect" to view full record details.
+          </p>
+        </div>
+      </div>
+
+      <!-- Historical Filter Toolbar -->
+      <div class="filter-bar">
+        <input type="text" id="histSearchInput" placeholder="🔍 Search company, role title, or strategic rationale..."/>
+        <select id="histYearFilter">
+          <option value="ALL">All Recorded Years (269 JDs)</option>
+          <option value="2026">2026 (Inferred from filename: 27 roles)</option>
+          <option value="2025">2025 (Inferred from filename: 8 roles)</option>
+          <option value="2025-26">2025-26 (Inferred from filename: 2 roles)</option>
+          <option value="2024">2024 (Inferred from filename: 1 role)</option>
+          <option value="Unspecified">Year Unspecified in Source (231 roles)</option>
+        </select>
+        <select id="histCategoryFilter">
+          <option value="ALL">All Categories</option>
+          <option value="A">Category A: True Consulting</option>
+          <option value="B">Category B: Product Management</option>
+          <option value="C">Category C: Analytics</option>
+          <option value="D">Category D: Marketing</option>
+          <option value="E">Category E: Finance</option>
+          <option value="F">Category F: Operations</option>
+          <option value="G">Category G: IT Services Trap</option>
+        </select>
+        <select id="histTrapFilter">
+          <option value="ALL">All Roles</option>
+          <option value="SAFE_ONLY">Safe Roles Only (No Traps)</option>
+          <option value="TRAPS_ONLY">IT Traps Only (Category G)</option>
+        </select>
+        <select id="histSortSelect">
+          <option value="ID_ASC">Historical ID (1-269)</option>
+          <option value="FIT_DESC">Fit Score: High to Low</option>
+          <option value="COMPANY_ASC">Company Name (A-Z)</option>
+        </select>
+      </div>
+
+      <!-- Historical Table -->
+      <div class="data-table-wrapper">
+        <table class="data-table" id="histDataTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Placement Year</th>
+              <th>Company</th>
+              <th>Role Title</th>
+              <th>Category</th>
+              <th>Y1 CTC (Estimated Benchmark)</th>
+              <th>Fit Score (Heuristic)</th>
+              <th>Trap Flag</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="histTableBody">
+            <tr><td colspan="9" style="text-align:center; padding:2rem;">Loading historical records…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       TAB 4: EXECUTIVE DASHBOARD
+══════════════════════════════════════════════════════════════════ -->
+  <section class="tab-content" id="tab-dashboard" style="display:none;">
+    <div id="dashEmptyState" class="card" style="text-align:center; padding:3rem 1.5rem;">
+      <div style="font-size:2.5rem; margin-bottom:0.75rem;">📊</div>
+      <h3>No Current Analysis Results Yet</h3>
+      <p style="color:var(--text-muted);">Please upload job descriptions and click "Run Placement Analysis" on the Ingestion tab.</p>
+    </div>
+
+    <div id="dashActiveContent" style="display:none;">
+      <!-- Aggregate Statistics Summary -->
+      <div class="panel-grid-4" id="aggregateStatsCards"></div>
+
+      <!-- Executive Recommendations -->
+      <div class="card section-gap">
+        <h2>Executive Placement Strategy Recommendation</h2>
+        <div class="panel-grid-3" id="executivePathCards"></div>
+        <div class="section-gap panel-grid-2">
+          <div>
+            <h4>Key Decision Drivers</h4>
+            <ul id="execDecisionDrivers" style="font-size:0.86rem; padding-left:1rem;"></ul>
+          </div>
+          <div>
+            <h4>Critical Risks & Watch-Outs</h4>
+            <ul id="execCriticalRisks" style="font-size:0.86rem; padding-left:1rem;"></ul>
+          </div>
+        </div>
+        <div class="alert alert-info" id="execEvidenceBounds" style="margin-top:1rem; font-size:0.82rem;"></div>
+      </div>
+
+      <!-- Track Rankings Table -->
+      <div class="card section-gap">
+        <h2>Ranked Career Tracks (Excluding Category G Traps)</h2>
+        <div class="data-table-wrapper">
+          <table class="data-table" id="trackRankingsTable">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Track</th>
+                <th>Earnings (30%)</th>
+                <th>Prestige (25%)</th>
+                <th>Profile Fit (25%)</th>
+                <th>IT Escape (20%)</th>
+                <th>Weighted Score</th>
+                <th>Strategic Justification</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       TAB 5: VERIFIED JD ANALYSIS & TRAP AUDIT
+══════════════════════════════════════════════════════════════════ -->
+  <section class="tab-content" id="tab-jds" style="display:none;">
+    <div class="card">
+      <div class="card-header-flex">
+        <div>
+          <h2>Verified Job Description Directory (Current Cycle)</h2>
+          <p style="color:var(--text-muted); font-size:0.86rem; margin:0;">
+            Browse and filter all analyzed campus placement roles. Category G roles are flagged and excluded from positive recommendations.
+          </p>
+        </div>
+      </div>
+
+      <!-- Filter and Search Toolbar -->
+      <div class="filter-bar">
+        <input type="text" id="tableSearchInput" placeholder="🔍 Search by company, role title, or keywords..."/>
+        <select id="tableCategoryFilter">
+          <option value="ALL">All Categories</option>
+          <option value="A">Category A: True Consulting</option>
+          <option value="B">Category B: Product Management</option>
+          <option value="C">Category C: Analytics</option>
+          <option value="D">Category D: Marketing</option>
+          <option value="E">Category E: Finance</option>
+          <option value="F">Category F: Operations</option>
+          <option value="G">Category G: IT Services Trap</option>
+        </select>
+        <select id="tableTrapFilter">
+          <option value="ALL">All Roles</option>
+          <option value="SAFE_ONLY">Safe Roles Only (No Traps)</option>
+          <option value="TRAPS_ONLY">Category G Traps Only</option>
+        </select>
+        <select id="tableSortSelect">
+          <option value="FIT_DESC">Profile Fit: High to Low</option>
+          <option value="ESCAPE_DESC">Escape Velocity: High to Low</option>
+          <option value="EMPLOYER_ASC">Employer Name (A-Z)</option>
+        </select>
+      </div>
+
+      <!-- Data Table -->
+      <div class="data-table-wrapper">
+        <table class="data-table" id="jdVerifiedTable">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Employer</th>
+              <th>Role Title</th>
+              <th>Orientation</th>
+              <th>Profile Fit</th>
+              <th>Moat</th>
+              <th>IT Escape</th>
+              <th>Historical Precedent</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="jdTableBody">
+            <tr><td colspan="9" style="text-align:center; color:var(--text-muted); padding:2rem;">No analyzed JDs yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       TAB 6: CROSS-CATEGORY STRATEGY
+══════════════════════════════════════════════════════════════════ -->
+  <section class="tab-content" id="tab-strategy" style="display:none;">
+    <div id="strategyEmptyState" class="card" style="text-align:center; padding:3rem 1.5rem;">
+      <div style="font-size:2.5rem; margin-bottom:0.75rem;">🧭</div>
+      <h3>Strategic Analysis Available Post-Analysis</h3>
+      <p style="color:var(--text-muted);">Run the analysis to generate the Accenture Advantage vs Trap assessment and cross-category comparison matrix.</p>
+    </div>
+
+    <div id="strategyActiveContent" style="display:none;">
+      <div class="card">
+        <h2>🧭 Strategic Cross-Category Evaluation</h2>
+        
+        <!-- Accenture Analysis -->
+        <div class="section-gap">
+          <h3>The Accenture Advantage vs. The Accenture Trap</h3>
+          <div id="stratAccentureSection" style="font-size:0.9rem; line-height:1.6; color:var(--slate-dark);"></div>
+        </div>
+
+        <!-- Consulting Subtypes -->
+        <div class="section-gap">
+          <h3>Consulting Subtypes: Strategy vs. Tech Consulting vs. Implementation</h3>
+          <div id="stratConsultingSubtypes" style="font-size:0.9rem; line-height:1.6; color:var(--slate-dark);"></div>
+        </div>
+
+        <!-- PM Viability -->
+        <div class="section-gap">
+          <h3>Product Management in Enterprise Tech & B2B SaaS</h3>
+          <div id="stratPmSection" style="font-size:0.9rem; line-height:1.6; color:var(--slate-dark);"></div>
+        </div>
+
+        <!-- Analytics AI -->
+        <div class="section-gap">
+          <h3>Analytics, Commercial Data & AI Advisory Opportunities</h3>
+          <div id="stratAnalyticsSection" style="font-size:0.9rem; line-height:1.6; color:var(--slate-dark);"></div>
+        </div>
+
+        <!-- Comparative Matrix -->
+        <div class="section-gap">
+          <h3>Cross-Category Comparative Matrix</h3>
+          <div id="stratComparativeMatrix" style="font-family:var(--mono); font-size:0.84rem; background:var(--bg-panel); padding:1rem; border-radius:var(--radius); overflow-x:auto; white-space:pre-wrap;"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       TAB 7: 6-MONTH PREPARATION ROADMAP
+══════════════════════════════════════════════════════════════════ -->
+  <section class="tab-content" id="tab-roadmap" style="display:none;">
+    <div id="roadmapEmptyState" class="card" style="text-align:center; padding:3rem 1.5rem;">
+      <div style="font-size:2.5rem; margin-bottom:0.75rem;">🗓️</div>
+      <h3>Personalized 6-Month Preparation Roadmap</h3>
+      <p style="color:var(--text-muted);">Your week-by-week plan will be generated based on your top recommended career tracks and profile gaps.</p>
+    </div>
+
+    <div id="roadmapActiveContent" style="display:none;">
+      <div class="card">
+        <h2>🗓️ 24-Week Placement Preparation Roadmap</h2>
+        <p style="color:var(--text-muted); font-size:0.86rem;">
+          Tailored to your candidate strengths (4.5y SWE + MBA) and targeted toward consulting case interviews, B2B SaaS product teardowns, and analytics strategy.
+        </p>
+        <div class="roadmap-grid" id="roadmapGrid"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       TAB 8: DOWNLOADS & AUDIT
+══════════════════════════════════════════════════════════════════ -->
+  <section class="tab-content" id="tab-export" style="display:none;">
+    <div class="card">
+      <h2>📥 Download Reports & Audit Files</h2>
+      <p style="color:var(--text-muted); font-size:0.86rem;">
+        Export all analyzed results, candidate scores, and strategic roadmaps. All files are generated dynamically from current on-screen results.
+      </p>
+
+      <div style="display:flex; gap:0.75rem; flex-wrap:wrap; margin-top:1.25rem;">
+        <button class="btn btn-primary" id="btnDownloadJSON" disabled>
+          💾 Download Machine-Readable JSON
+        </button>
+        <button class="btn btn-secondary" id="btnDownloadCSV" disabled>
+          📊 Download JD Analysis CSV
+        </button>
+        <button class="btn btn-secondary" id="btnDownloadMarkdown" disabled>
+          📝 Download Executive Markdown Report
+        </button>
+        <button class="btn btn-secondary" id="btnPrintReport">
+          🖨 Browser Print / Save PDF
+        </button>
+      </div>
+
+      <div class="alert alert-info section-gap" style="font-size:0.82rem;">
+        ℹ <strong>Export Specifications:</strong> The JSON file contains clean, validated machine-readable objects without Markdown code fences. The CSV includes all quantitative metrics (Fit, Moat, Escape Velocity). The Markdown report provides an executive briefing.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═════════════════════════════════════════════════════════════
+     MODAL 1: SPREADSHEET COLUMN MAPPING MODAL (CSV, TSV, XLSX)
+══════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="spreadsheetMappingModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 style="margin:0;">Map Spreadsheet Columns</h3>
+      <button class="btn btn-secondary btn-sm" id="btnCloseSpreadsheetModal">✕</button>
+    </div>
+    <p style="font-size:0.86rem; color:var(--text-muted);">
+      File: <strong id="modalSpreadsheetFilename">data.xlsx</strong> (<span id="modalSpreadsheetRowCount">0</span> rows detected).
+      Map your table columns to the required analysis fields.
+    </p>
+
+    <div class="section-gap">
+      <label for="mapColText">Job Description Text Column <span style="color:var(--danger);">* Required</span></label>
+      <select id="mapColText"></select>
+    </div>
+
+    <div class="panel-grid-2 section-gap">
+      <div>
+        <label for="mapColEmployer">Employer / Company Name (Optional)</label>
+        <select id="mapColEmployer"></select>
+      </div>
+      <div>
+        <label for="mapColTitle">Role / Job Title (Optional)</label>
+        <select id="mapColTitle"></select>
+      </div>
+      <div>
+        <label for="mapColLocation">Location (Optional)</label>
+        <select id="mapColLocation"></select>
+      </div>
+      <div>
+        <label for="mapColComp">Compensation / CTC (Optional)</label>
+        <select id="mapColComp"></select>
+      </div>
+    </div>
+
+    <div class="section-gap">
+      <h4>Row 1 Live Preview:</h4>
+      <div id="modalRowPreview" style="background:var(--bg-panel); padding:0.75rem; border-radius:var(--radius-sm); font-size:0.8rem; font-family:var(--mono); max-height:120px; overflow-y:auto;">
+        Select columns above to preview data.
+      </div>
+    </div>
+
+    <div style="margin-top:1.25rem; display:flex; justify-content:flex-end; gap:0.5rem;">
+      <button class="btn btn-secondary" id="btnCancelSpreadsheetImport">Cancel</button>
+      <button class="btn btn-primary" id="btnConfirmSpreadsheetImport">Import Validated Rows</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════
+     MODAL 2: CURRENT JD DETAIL ASSESSMENT VIEW
+══════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="jdDetailModal">
+  <div class="modal-box" style="max-width:800px;">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span class="pill" id="detailModalCategoryPill">CAT A</span>
+        <h3 style="margin:0;" id="detailModalTitle">Company — Role</h3>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnCloseDetailModal">✕</button>
+    </div>
+
+    <div id="detailModalContent"></div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════
+     MODAL 3: HISTORICAL RECORD DETAIL AUDIT VIEW
+══════════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="historicalDetailModal">
+  <div class="modal-box" style="max-width:800px;">
+    <div class="modal-header">
+      <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span class="pill-hist" id="histModalId">HIST-1</span>
+        <span class="pill" id="histModalCategoryPill">CAT A</span>
+        <h3 style="margin:0;" id="histModalTitle">Company — Title</h3>
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnCloseHistModal">✕</button>
+    </div>
+
+    <div id="histModalContent"></div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer style="margin-top:auto; background:var(--bg-panel); border-top:1px solid var(--border); padding:1.25rem 0; font-size:0.78rem; color:var(--text-muted); text-align:center;">
+  <div class="container">
+    MBA Placement Strategy Analyst · Client-side processing with secure Cloudflare Worker backend · Google Gemini API powered · Historical archives loaded from <code>data/previous_year_jds.json</code>
+  </div>
+</footer>
+
+<!-- Application Logic -->
+<script src="./script.js"></script>
+</body>
+</html>

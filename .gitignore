@@ -1,0 +1,27 @@
+# Secrets — NEVER commit these
+.env
+.env.*
+*.env
+.dev.vars
+
+# Wrangler local state
+.wrangler/
+worker/.wrangler/
+
+# Node modules (if any tooling is added)
+node_modules/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Temporary / generated
+*.log
+*.tmp
+*.bak
+scratch/
